@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+    <meta charset="UTF-8">
+    <title>Reaction Task</title>
+    
+
+  </head>
+    
+  <body>
+  <!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Reaction Time Experiment & Analytics</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.0.1"></script>
+
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+      background: #f4f7f6;
+    }
+
+    #welcome {
+      text-align: center;
+      background: white;
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+      max-width: 400px;
+    }
+
+    #task {
+      display: none;
+      width: 100vw;
+      height: 100vh;
+      background: white;
+      position: relative;
+      overflow: hidden;
+    }
+
+    #circle {
+      width: 100px;
+      height: 100px;
+      background: #ff4757;
+      border-radius: 50%;
+      position: absolute;
+      display: none;
+      cursor: pointer;
+      transition: transform 0.1s;
+    }
+
+    #circle:active {
+      transform: scale(0.9);
+    }
+
+    #chart-container {
+      display: none;
+      width: 80%;
+      max-width: 800px;
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+      text-align: center;
+    }
+
+    input {
+      padding: 12px;
+      margin: 15px 0;
+      width: 80%;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+    }
+
+    button {
+      padding: 12px 24px;
+      cursor: pointer;
+      background: #2f3542;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-weight: bold;
+    }
+
+    button:hover {
+      background: #57606f;
+    }
+
+    h1 {
+      color: #2f3542;
+      margin-top: 0;
+    }
+
+    canvas {
+      margin-top: 20px;
+      max-height: 400px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div id="welcome">
+    <h1>Reaction Task</h1>
+    <p>Enter your Participant ID to begin. If left blank, one will be assigned.</p>
+    <input type="text" id="pID" placeholder="Participant ID">
+    <br>
+    <button onclick="startTask()">Start Experiment</button>
+  </div>
+
+  <div id="task">
+    <div id="circle" onmousedown="handleCircleClick(event)"></div>
+  </div>
+
+  <div id="chart-container">
+    <h1>Results vs. Community</h1>
+    <p id="status-msg">Submitting and fetching community data...</p>
+    <div style="height: 400px; width: 100%;">
+      <canvas id="resultsChart"></canvas>
+    </div>
+    <br>
+    <button onclick="resetExperiment()">Restart Task</button>
+  </div>
+
+  <script>
+    // --- CONFIGURATION ---
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzN3ZCP3drh69fLtkFx1Ogct4qtcViXYoLnRdIEZE51EvbiPt9KIyksz3S1EGiZTmWD/exec";
+    const TOTAL_TRIALS = 10;
+    
+    let trials = [];
+    let count = 0;
+    let startTime;
+    let participantId;
+    let chartInstance = null;
+
+    // --- MAIN FUNCTIONS ---
+
+    function startTask() {
+      // 1. Get/Set ID
+      const inputVal = document.getElementById('pID').value.trim();
+      participantId = inputVal || "RAND_" + Math.random().toString(36).substr(2, 5).toUpperCase();
+      
+      // 2. UI Switch
+      document.getElementById('welcome').style.display = 'none';
+      document.getElementById('task').style.display = 'block';
+      
+      // 3. Kickoff
+      setTimeout(spawnCircle, 800);
+    }
+
+    function spawnCircle() {
+      if (count >= TOTAL_TRIALS) {
+        showVisualization();
+        return;
+      }
+      
+      const circle = document.getElementById('circle');
+      const x = Math.random() * (window.innerWidth - 120);
+      const y = Math.random() * (window.innerHeight - 120);
+      
+      circle.style.left = x + 'px';
+      circle.style.top = y + 'px';
+      circle.style.display = 'block';
+      
+      startTime = performance.now();
+    }
+
+    function handleCircleClick(e) {
+      e.stopPropagation();
+      const rt = Math.round(performance.now() - startTime);
+      trials.push(rt);
+      
+      document.getElementById('circle').style.display = 'none';
+      count++;
+      
+      if (count < TOTAL_TRIALS) {
+        setTimeout(spawnCircle, 500);
+      } else {
+        showVisualization();
+      }
+    }
+
+    async function showVisualization() {
+      document.getElementById('task').style.display = 'none';
+      document.getElementById('chart-container').style.display = 'block';
+      
+      const userAvg = trials.reduce((a, b) => a + b, 0) / trials.length;
+      
+      try {
+        // Send data
+        for (let i = 0; i < trials.length; i++) {
+          await fetch(WEB_APP_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            body: JSON.stringify({
+              Participant_ID: participantId,
+              Trial_Number: i + 1,
+              Reaction_Time: trials[i]
+            })
+          });
+        }
+
+        // Get community data
+        const response = await fetch(WEB_APP_URL);
+        const historicalData = await response.json();
+        
+        renderChart(historicalData, userAvg);
+        document.getElementById('status-msg').innerText = "Your average: " + Math.round(userAvg) + "ms";
+        
+      } catch (err) {
+        console.error("Submission error:", err);
+        document.getElementById('status-msg').innerText = "Average: " + Math.round(userAvg) + "ms (Offline)";
+        renderChart(trials, userAvg);
+      }
+    }
+
+    function renderChart(data, userAvg) {
+      const ctx = document.getElementById('resultsChart').getContext('2d');
+      if (chartInstance) chartInstance.destroy();
+
+      const chartData = (data && data.length > 0) ? data : [350, 400, 450];
+      const bins = [200, 250, 300, 350, 400, 450, 500, 550, 600];
+      const binCounts = bins.map(
+    
+  </body>
+  
+</html>
