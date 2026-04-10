@@ -124,9 +124,7 @@
   <div id="chart-container">
     <h1>Results vs. Community</h1>
     <p id="status-msg">Submitting and fetching community data...</p>
-    <div style="height: 400px; width: 100%;">
-      <canvas id="resultsChart"></canvas>
-    </div>
+    <canvas id="resultsChart"></canvas>
     <br>
     <button onclick="resetExperiment()">Restart Task</button>
   </div>
@@ -135,42 +133,27 @@
     // --- CONFIGURATION ---
     const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzN3ZCP3drh69fLtkFx1Ogct4qtcViXYoLnRdIEZE51EvbiPt9KIyksz3S1EGiZTmWD/exec";
     const TOTAL_TRIALS = 10;
-    
     let trials = [];
     let count = 0;
     let startTime;
     let participantId;
     let chartInstance = null;
 
-    // --- MAIN FUNCTIONS ---
-
     function startTask() {
-      // 1. Get/Set ID
-      const inputVal = document.getElementById('pID').value.trim();
-      participantId = inputVal || "RAND_" + Math.random().toString(36).substr(2, 5).toUpperCase();
-      
-      // 2. UI Switch
+      participantId = document.getElementById('pID').value.trim() || "RAND_" + Math.random().toString(36).substr(2, 5).toUpperCase();
       document.getElementById('welcome').style.display = 'none';
       document.getElementById('task').style.display = 'block';
-      
-      // 3. Kickoff
       setTimeout(spawnCircle, 800);
     }
 
     function spawnCircle() {
-      if (count >= TOTAL_TRIALS) {
-        showVisualization();
-        return;
-      }
-      
+      if (count >= TOTAL_TRIALS) return showVisualization();
       const circle = document.getElementById('circle');
       const x = Math.random() * (window.innerWidth - 120);
       const y = Math.random() * (window.innerHeight - 120);
-      
       circle.style.left = x + 'px';
       circle.style.top = y + 'px';
       circle.style.display = 'block';
-      
       startTime = performance.now();
     }
 
@@ -178,58 +161,105 @@
       e.stopPropagation();
       const rt = Math.round(performance.now() - startTime);
       trials.push(rt);
-      
       document.getElementById('circle').style.display = 'none';
       count++;
-      
       if (count < TOTAL_TRIALS) {
         setTimeout(spawnCircle, 500);
       } else {
         showVisualization();
       }
     }
-
     async function showVisualization() {
       document.getElementById('task').style.display = 'none';
       document.getElementById('chart-container').style.display = 'block';
-      
       const userAvg = trials.reduce((a, b) => a + b, 0) / trials.length;
-      
       try {
-        // Send data
-        for (let i = 0; i < trials.length; i++) {
-          await fetch(WEB_APP_URL, {
-            method: 'POST',
-            mode: 'no-cors',
-            body: JSON.stringify({
-              Participant_ID: participantId,
-              Trial_Number: i + 1,
-              Reaction_Time: trials[i]
-            })
-          });
-        }
-
-        // Get community data
+        // POST Data to Web App
+        await fetch(WEB_APP_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          body: JSON.stringify({
+            id: participantId,
+            average: userAvg,
+            raw: trials
+          })
+        });
+        // GET Historical Data for Histogram
         const response = await fetch(WEB_APP_URL);
         const historicalData = await response.json();
-        
         renderChart(historicalData, userAvg);
         document.getElementById('status-msg').innerText = "Your average: " + Math.round(userAvg) + "ms";
-        
       } catch (err) {
-        console.error("Submission error:", err);
-        document.getElementById('status-msg').innerText = "Average: " + Math.round(userAvg) + "ms (Offline)";
-        renderChart(trials, userAvg);
+        console.error("Data error:", err);
+        document.getElementById('status-msg').innerText = "Finished! Average: " + Math.round(userAvg) + "ms (Offline mode)";
+        renderChart([300, 350, 400, 450, 500, 320, 380], userAvg);
       }
     }
 
     function renderChart(data, userAvg) {
       const ctx = document.getElementById('resultsChart').getContext('2d');
-      if (chartInstance) chartInstance.destroy();
+      // Cleanup old chart if it exists
+      if (chartInstance) {
+        chartInstance.destroy();
+      }
+      
+      // Fixed: Bins now go up to 1500ms
+      const bins = [200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1050, 1100, 1150, 1200, 1250, 1300, 1350, 1400, 1450, 1500];
+      const binCounts = bins.map(b => data.filter(val => val >= b && val < b + 50).length);
+      
+      chartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: bins.map(b => b + "ms"),
+          datasets: [{
+            label: 'Number of Participants',
+            data: binCounts,
+            backgroundColor: '#3498db'
+          }]
+        },
+        options: {
+          scales: {
+            y: {
+              beginAtZero: true,
+              max: 10 // Fixed: Y-axis max set to 10
+            }
+          },
+          plugins: {
+            annotation: {
+              annotations: {
+                line1: {
+                  type: 'line',
+                  xMin: (userAvg - 200) / 50,
+                  xMax: (userAvg - 200) / 50,
+                  borderColor: '#ff4757',
+                  borderWidth: 4,
+                  label: {
+                    display: true,
+                    content: 'YOU (' + Math.round(userAvg) + 'ms)',
+                    backgroundColor: '#ff4757'
+                  }
+                }
+              }
+            }
+          }
+        }
+      });
+    }
 
-      const chartData = (data && data.length > 0) ? data : [350, 400, 450];
-      const bins = [200, 250, 300, 350, 400, 450, 500, 550, 600];
-      const binCounts = bins.map(
+    function resetExperiment() {
+      // Reset variables
+      trials = [];
+      count = 0;
+      // Reset UI
+      document.getElementById('chart-container').style.display = 'none';
+      document.getElementById('welcome').style.display = 'block';
+      document.getElementById('pID').value = "";
+      document.getElementById('status-msg').innerText = "Submitting and fetching community data...";
+    }
+  </script>
+</body>
+
+</html>
     
   </body>
   
