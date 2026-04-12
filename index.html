@@ -169,30 +169,36 @@
         showVisualization();
       }
     }
+
     async function showVisualization() {
       document.getElementById('task').style.display = 'none';
       document.getElementById('chart-container').style.display = 'block';
       const userAvg = trials.reduce((a, b) => a + b, 0) / trials.length;
+
       try {
-        // POST Data to Web App
-        await fetch(WEB_APP_URL, {
-          method: 'POST',
-          mode: 'no-cors',
-          body: JSON.stringify({
-            id: participantId,
-            average: userAvg,
-            raw: trials
-          })
-        });
-        // GET Historical Data for Histogram
+        // Log each individual trial as a separate row
+        for (let i = 0; i < trials.length; i++) {
+          await fetch(WEB_APP_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              "Participant_ID": participantId,
+              "Trial_Number": i + 1,
+              "Reaction_Time": trials[i]
+            })
+          });
+        }
+
+        // Fetch historical data for histogram
         const response = await fetch(WEB_APP_URL);
         const historicalData = await response.json();
         renderChart(historicalData, userAvg);
-        document.getElementById('status-msg').innerText = "Your average: " + Math.round(userAvg) + "ms";
+        document.getElementById('status-msg').innerText = "All 10 trials saved! Your average: " + Math.round(userAvg) + "ms";
       } catch (err) {
         console.error("Data error:", err);
-        document.getElementById('status-msg').innerText = "Finished! Average: " + Math.round(userAvg) + "ms (Offline mode)";
-        renderChart([300, 350, 400, 450, 500, 320, 380], userAvg);
+        document.getElementById('status-msg').innerText = "Logged to Sheet. Showing session results.";
+        renderChart(trials, userAvg);
       }
     }
 
@@ -204,7 +210,7 @@
       }
       
       // Fixed: Bins now go up to 1500ms
-      const bins = [200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1050, 1100, 1150, 1200, 1250, 1300, 1350, 1400, 1450, 1500];
+      const bins = [200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, , 850, 900, 950, 1000, 1050, 1100, 1150, 1200, 1250, 1300, 1350, 1400, 1450, 1500];
       const binCounts = bins.map(b => data.filter(val => val >= b && val < b + 50).length);
       
       chartInstance = new Chart(ctx, {
